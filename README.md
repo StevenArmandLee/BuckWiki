@@ -22,8 +22,7 @@ You may also use breakpoints, just like normal when using the generated Xcode pr
 ### To Contribute
 1. Fork the repo and create your branch from `master`.
 2. Added the pod in podfile.
-3. Added the newly added pod into [IGListExperiment](https://github.com/Instagram/IGListKit/blob/master/Source/Common/IGListExperiments.h#L17)
-](https://github.com/StevenArmandLee/BuckWiki/blob/master/Pods/BUCK).
+3. Added the newly added pod into [IGListExperiment](https://github.com/StevenArmandLee/BuckWiki/blob/master/Pods/BUCK).
 4. Import the newly added pod into [ViewController](https://github.com/StevenArmandLee/BuckWiki/blob/master/BuckTest/ViewController.swift).
 5. Make sure the project can run without any crash.
 
