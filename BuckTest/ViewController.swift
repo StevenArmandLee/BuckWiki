@@ -21,16 +21,16 @@ import RxCocoa
 //import Fabric
 //import Crashlytics
 //import Mixpanel
-//import SwiftyRSA
+import SwiftyRSA
 //import SwiftKeychainWrapper
 //import SkyFloatingLabelTextField
 //import CountryPicker
-//import Validator
+import Validator
 //import SVProgressHUD
 //import Intercom
-//import Hero
-//import Lottie
-//import IQKeyboardManagerSwift
+import Hero
+import Lottie
+import IQKeyboardManagerSwift
 //import Armchair
 //import Protobuf
 //import ZendeskSDK
@@ -49,6 +49,12 @@ class ViewController: UIViewController {
         // Do any additional setup after loading the view, typically from a nib.
         
         Alamofire.request("https://www.google.com")
+        
+        guard let publicKey = try? PublicKey(pemEncoded: "publicKey") else {return }
+        guard  let inputPassword = try? ClearMessage(string: "password", using: .utf8) else {return }
+        let encryptedPassword = try? inputPassword.encrypted(with: publicKey, padding: .PKCS1)
+        guard  let password = encryptedPassword?.base64String else {return}
+
     }
 
 
