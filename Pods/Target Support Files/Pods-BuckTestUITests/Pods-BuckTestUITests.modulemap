@@ -1,0 +1,6 @@
+framework module Pods_BuckTestUITests {
+  umbrella header "Pods-BuckTestUITests-umbrella.h"
+
+  export *
+  module * { export * }
+}
