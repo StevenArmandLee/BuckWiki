@@ -15,7 +15,7 @@ apple_resource(
 apple_library(
     name = "AppLibrary",
     configs = library_configs(),
-    swift_version = "5",
+    swift_version = "5.1",
     srcs = glob(["*.swift"]),
     deps = [
        "//Pods:Alamofire",
@@ -57,7 +57,7 @@ apple_library(
 apple_binary(
     name = "AppBinary",
     configs = app_binary_configs("BuckTest"),
-    swift_version = "5",
+    swift_version = "5.1",
     srcs = [
         "BuckSupportFiles/Dummy.swift",
     ],

@@ -50,6 +50,16 @@ apple_third_party_lib(
 )
 
 apple_third_party_lib(
+    name = "RxRelay",
+    
+    srcs = glob([
+        "RxRelay/**/*.swift"
+
+    ])
+)
+
+
+apple_third_party_lib(
     name = "RxCocoa",
     exported_headers = glob([
         "RxCocoa/**/*.h",
@@ -60,7 +70,8 @@ apple_third_party_lib(
 
     ]),
     deps = [
-        "//Pods:RxSwift"
+        "//Pods:RxSwift",
+        "//Pods:RxRelay"
     ],
 )
 

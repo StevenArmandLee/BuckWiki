@@ -13,8 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#define FIRCore_VERSION=5.4.1
-#define Firebase_VERSION=5.20.0
+
 #ifndef Firebase_VERSION
 #error "Firebase_VERSION is not defined: add -DFirebase_VERSION=... to the build invocation"
 #endif

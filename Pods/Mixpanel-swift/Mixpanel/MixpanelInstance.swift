@@ -253,8 +253,8 @@ open class MixpanelInstance: CustomDebugStringConvertible, FlushDelegate, AEDele
     var optOutStatus: Bool?
     let readWriteLock: ReadWriteLock
     #if os(iOS)
-    var reachability: SCNetworkReachability?
-    let telephonyInfo = CTTelephonyNetworkInfo()
+    static let reachability = SCNetworkReachabilityCreateWithName(nil, "api.mixpanel.com")
+    static let telephonyInfo = CTTelephonyNetworkInfo()
     #endif
     #if !os(OSX) && !WATCH_OS
     var taskId = UIBackgroundTaskIdentifier.invalid
@@ -282,16 +282,15 @@ open class MixpanelInstance: CustomDebugStringConvertible, FlushDelegate, AEDele
             decideInstance = Decide(basePathIdentifier: name, lock: self.readWriteLock)
         #endif // DECIDE
         let label = "com.mixpanel.\(self.apiToken)"
-        trackingQueue = DispatchQueue(label: label)
+        trackingQueue = DispatchQueue(label: "\(label).tracking)", qos: .utility)
         sessionMetadata = SessionMetadata(trackingQueue: trackingQueue)
         trackInstance = Track(apiToken: self.apiToken,
                               lock: self.readWriteLock,
                               metadata: sessionMetadata)
-        networkQueue = DispatchQueue(label: label)
+        networkQueue = DispatchQueue(label: "\(label).network)", qos: .utility)
 
         #if os(iOS)
-            reachability = SCNetworkReachabilityCreateWithName(nil, "api.mixpanel.com")
-            if let reachability = reachability {
+            if let reachability = MixpanelInstance.reachability {
                 var context = SCNetworkReachabilityContext(version: 0, info: nil, retain: nil, release: nil, copyDescription: nil)
                 func reachabilityCallback(reachability: SCNetworkReachability, flags: SCNetworkReachabilityFlags, unsafePointer: UnsafeMutableRawPointer?) -> Void {
                     let wifi = flags.contains(SCNetworkReachabilityFlags.reachable) && !flags.contains(SCNetworkReachabilityFlags.isWWAN)
@@ -449,7 +448,7 @@ open class MixpanelInstance: CustomDebugStringConvertible, FlushDelegate, AEDele
     deinit {
         NotificationCenter.default.removeObserver(self)
         #if os(iOS) && !WATCH_OS
-            if let reachability = reachability {
+            if let reachability = MixpanelInstance.reachability {
                 if !SCNetworkReachabilitySetCallback(reachability, nil, nil) {
                     Logger.error(message: "\(self) error unsetting reachability callback")
                 }
@@ -595,7 +594,9 @@ open class MixpanelInstance: CustomDebugStringConvertible, FlushDelegate, AEDele
     }
 
     func defaultDistinctId() -> String {
-        #if !os(OSX) && !WATCH_OS
+        #if MIXPANEL_RANDOM_DISTINCT_ID
+        let distinctId: String? = UUID().uuidString
+        #elseif !os(OSX) && !WATCH_OS
         var distinctId: String? = IFA()
         if distinctId == nil && NSClassFromString("UIDevice") != nil {
             distinctId = UIDevice.current.identifierForVendor?.uuidString
@@ -660,7 +661,7 @@ open class MixpanelInstance: CustomDebugStringConvertible, FlushDelegate, AEDele
     }
     #if os(iOS)
     @objc func setCurrentRadio() {
-        var radio = telephonyInfo.currentRadioAccessTechnology ?? "None"
+        var radio = MixpanelInstance.telephonyInfo.currentRadioAccessTechnology ?? "None"
         let prefix = "CTRadioAccessTechnology"
         if radio.hasPrefix(prefix) {
             radio = (radio as NSString).substring(from: prefix.count)
@@ -669,11 +670,11 @@ open class MixpanelInstance: CustomDebugStringConvertible, FlushDelegate, AEDele
             AutomaticProperties.automaticPropertiesLock.write { [weak self, radio] in
                 AutomaticProperties.properties["$radio"] = radio
 
-                guard let self = self else {
+                guard self != nil else {
                     return
                 }
 
-                if let carrierName = self.telephonyInfo.subscriberCellularProvider?.carrierName {
+                if let carrierName = MixpanelInstance.telephonyInfo.subscriberCellularProvider?.carrierName {
                     AutomaticProperties.properties["$carrier"] = carrierName
 
                 } else {
@@ -736,7 +737,9 @@ extension MixpanelInstance {
      build settings, and Mixpanel will use the IFV as the default distinct ID.
 
      If we are unable to get an IFA or IFV, we will fall back to generating a
-     random persistent UUID.
+     random persistent UUID. If you want to always use a random persistent UUID
+     you can define the <code>MIXPANEL_RANDOM_DISTINCT_ID</code> preprocessor flag
+     in your build settings.
 
      For tracking events, you do not need to call `identify:` if you
      want to use the default. However,
@@ -777,9 +780,11 @@ extension MixpanelInstance {
             // if it's new, blow away the alias as well.
             if distinctId != self.alias {
                 if distinctId != self.distinctId {
+                    let oldDistinctId = self.distinctId
                     self.alias = nil
                     self.distinctId = distinctId
                     self.userId = distinctId
+                    self.track(event: "$identify", properties: ["$anon_distinct_id": oldDistinctId])
                 }
 
                 if usePeople {
@@ -1132,15 +1137,31 @@ extension MixpanelInstance {
                 #else
                 let automaticEventsEnabled = false
                 #endif
-                self.flushInstance.flushEventsQueue(&self.flushEventsQueue,
-                                                    automaticEventsEnabled: automaticEventsEnabled)
-                self.flushInstance.flushPeopleQueue(&self.people.flushPeopleQueue)
-                self.flushInstance.flushGroupsQueue(&self.flushGroupsQueue)
 
+                let flushEventsQueue = self.flushInstance.flushEventsQueue(self.flushEventsQueue,
+                                                                           automaticEventsEnabled: automaticEventsEnabled)
+                let flushPeopleQueue = self.flushInstance.flushPeopleQueue(self.people.flushPeopleQueue)
+                let flushGroupsQueue = self.flushInstance.flushGroupsQueue(self.flushGroupsQueue)
+                
+                var shadowEventsQueue = Queue()
+                var shadowPeopleQueue = Queue()
+                var shadowGroupsQueue = Queue()
+
+                self.readWriteLock.read {
+                    shadowEventsQueue = self.eventsQueue
+                    shadowPeopleQueue = self.people.peopleQueue
+                    shadowGroupsQueue = self.groupsQueue
+                }
                 self.readWriteLock.write {
-                    self.eventsQueue = self.flushEventsQueue + self.eventsQueue
-                    self.people.peopleQueue = self.people.flushPeopleQueue + self.people.peopleQueue
-                    self.groupsQueue = self.flushGroupsQueue + self.groupsQueue
+                    if let flushEventsQueue = flushEventsQueue {
+                        self.eventsQueue = flushEventsQueue + shadowEventsQueue
+                    }
+                    if let flushPeopleQueue = flushPeopleQueue {
+                        self.people.peopleQueue = flushPeopleQueue + shadowPeopleQueue
+                    }
+                    if let flushGroupsQueue = flushGroupsQueue {
+                        self.groupsQueue = flushGroupsQueue + shadowGroupsQueue
+                    }
                     self.flushEventsQueue.removeAll()
                     self.people.flushPeopleQueue.removeAll()
                     self.flushGroupsQueue.removeAll()
@@ -1175,19 +1196,35 @@ extension MixpanelInstance {
             return
         }
         let epochInterval = Date().timeIntervalSince1970
+
+
+       // }
+
         trackingQueue.async { [weak self, event, properties, epochInterval] in
             guard let self = self else { return }
-
-            let mergedProperties = self.trackInstance.track(event: event,
-                                        properties: properties,
-                                        eventsQueue: &self.eventsQueue,
-                                        timedEvents: &self.timedEvents,
-                                        superProperties: self.superProperties,
-                                        distinctId: self.distinctId,
-                                        anonymousId: self.anonymousId,
-                                        userId: self.userId,
-                                        hadPersistedDistinctId: self.hadPersistedDistinctId,
-                                        epochInterval: epochInterval)
+            var shadowEventsQueue = Queue()
+            var shadowTimedEvents = InternalProperties()
+            var shadowSuperProperties = InternalProperties()
+            
+            self.readWriteLock.read {
+                shadowEventsQueue = self.eventsQueue
+                shadowTimedEvents = self.timedEvents
+                shadowSuperProperties = self.superProperties
+            }
+            let (eventsQueue, timedEvents, mergedProperties) = self.trackInstance.track(event: event,
+                                                                                        properties: properties,
+                                                                                        eventsQueue: shadowEventsQueue,
+                                                                                        timedEvents: shadowTimedEvents,
+                                                                                        superProperties: shadowSuperProperties,
+                                                                                        distinctId: self.distinctId,
+                                                                                        anonymousId: self.anonymousId,
+                                                                                        userId: self.userId,
+                                                                                        hadPersistedDistinctId: self.hadPersistedDistinctId,
+                                                                                        epochInterval: epochInterval)
+            self.readWriteLock.write {
+                self.eventsQueue = eventsQueue
+                self.timedEvents = timedEvents
+            }
 
             self.readWriteLock.read {
                 Persistence.archiveEvents(self.flushEventsQueue + self.eventsQueue, token: self.apiToken)
@@ -1196,7 +1233,7 @@ extension MixpanelInstance {
             self.decideInstance.notificationsInstance.showNotification(event: event, properties: mergedProperties)
             #endif  // DECIDE
         }
-        
+
         if MixpanelInstance.isiOSAppExtension() {
             flush()
         }
@@ -1322,7 +1359,9 @@ extension MixpanelInstance {
         trackingQueue.async { [weak self, startTime, event] in
             guard let self = self else { return }
 
-            self.trackInstance.time(event: event, timedEvents: &self.timedEvents, startTime: startTime)
+            self.readWriteLock.write {
+                self.timedEvents = self.trackInstance.time(event: event, timedEvents: self.timedEvents, startTime: startTime)
+            }
         }
     }
 
@@ -1344,8 +1383,9 @@ extension MixpanelInstance {
     open func clearTimedEvents() {
         trackingQueue.async { [weak self] in
             guard let self = self else { return }
-
-            self.trackInstance.clearTimedEvents(&self.timedEvents)
+            self.readWriteLock.write {
+                self.timedEvents = self.trackInstance.clearTimedEvents(self.timedEvents)
+            }
         }
     }
 
@@ -1355,7 +1395,11 @@ extension MixpanelInstance {
      - returns: the current super properties
      */
     open func currentSuperProperties() -> [String: Any] {
-        return superProperties
+        var properties = InternalProperties()
+        self.readWriteLock.read {
+            properties = superProperties
+        }
+        return properties
     }
 
     /**
@@ -1364,8 +1408,9 @@ extension MixpanelInstance {
     open func clearSuperProperties() {
         dispatchAndTrack() { [weak self] in
             guard let self = self else { return }
-
-            self.trackInstance.clearSuperProperties(&self.superProperties)
+            self.readWriteLock.write {
+                self.superProperties = self.trackInstance.clearSuperProperties(self.superProperties)
+            }
         }
     }
 
@@ -1383,9 +1428,10 @@ extension MixpanelInstance {
     open func registerSuperProperties(_ properties: Properties) {
         dispatchAndTrack() { [weak self] in
             guard let self = self else { return }
-
-            self.trackInstance.registerSuperProperties(properties,
-                                                       superProperties: &self.superProperties)
+            self.readWriteLock.write {
+                self.superProperties = self.trackInstance.registerSuperProperties(properties,
+                                                       superProperties: self.superProperties)
+            }
         }
     }
 
@@ -1403,10 +1449,11 @@ extension MixpanelInstance {
                                             defaultValue: MixpanelType? = nil) {
         dispatchAndTrack() { [weak self] in
             guard let self = self else { return }
-
-            self.trackInstance.registerSuperPropertiesOnce(properties,
-                                                           superProperties: &self.superProperties,
+            self.readWriteLock.write {
+                self.superProperties = self.trackInstance.registerSuperPropertiesOnce(properties,
+                                                           superProperties: self.superProperties,
                                                            defaultValue: defaultValue)
+            }
         }
     }
 
@@ -1426,9 +1473,10 @@ extension MixpanelInstance {
     open func unregisterSuperProperty(_ propertyName: String) {
         dispatchAndTrack() { [weak self] in
             guard let self = self else { return }
-
-            self.trackInstance.unregisterSuperProperty(propertyName,
-                                                       superProperties: &self.superProperties)
+            self.readWriteLock.write {
+                self.superProperties = self.trackInstance.unregisterSuperProperty(propertyName,
+                                                       superProperties: self.superProperties)
+            }
         }
     }
 

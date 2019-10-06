@@ -1,0 +1,5 @@
+${PODS_ROOT}/Target Support Files/Pods-BuckTest/Pods-BuckTest-resources.sh
+${PODS_ROOT}/Intercom/Intercom/Intercom.framework/Versions/A/Resources/Intercom.bundle
+${PODS_ROOT}/Intercom/Intercom/Intercom.framework/Versions/A/Resources/IntercomTranslations.bundle
+${PODS_ROOT}/ZDCChat/ZDCChatStrings.bundle
+${PODS_ROOT}/ZDCChat/ZDCChat.bundle
