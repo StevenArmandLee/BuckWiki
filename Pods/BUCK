@@ -55,7 +55,10 @@ apple_third_party_lib(
     srcs = glob([
         "RxRelay/**/*.swift"
 
-    ])
+    ]),
+    deps = [
+        "//Pods:RxSwift",
+    ],
 )
 
 
@@ -341,6 +344,7 @@ apple_third_party_lib(
     srcs = glob([
         "SVProgressHUD/**/*.m"
     ]),
+    preprocessor_flags = ['-fobjc-arc'],
     deps = [
         "//Pods:SVProgressHUDResources",
     ]

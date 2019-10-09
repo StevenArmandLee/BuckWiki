@@ -26,7 +26,7 @@ import SwiftyRSA
 //import SkyFloatingLabelTextField
 //import CountryPicker
 import Validator
-//import SVProgressHUD
+import SVProgressHUD
 //import Intercom
 import Hero
 import Lottie
@@ -44,21 +44,35 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .white
-        adapter.collectionView = collectionView
-        adapter.dataSource = self
-        // Do any additional setup after loading the view, typically from a nib.
-        
-        Alamofire.request("https://www.google.com")
-        
-        guard let publicKey = try? PublicKey(pemEncoded: "publicKey") else {return }
-        guard  let inputPassword = try? ClearMessage(string: "password", using: .utf8) else {return }
-        let encryptedPassword = try? inputPassword.encrypted(with: publicKey, padding: .PKCS1)
-        guard  let password = encryptedPassword?.base64String else {return}
+        iglistkit()
+        alamofire()
+        swiftyRSA()
 
+//        SVProgressHUD.showSuccess(withStatus: "waddup")
     }
 
 
 }
+
+//Remark: pod implementations
+extension ViewController {
+    func iglistkit() {
+        adapter.collectionView = collectionView
+        adapter.dataSource = self
+    }
+    
+    func alamofire() {
+         Alamofire.request("https://www.google.com")
+    }
+    
+    func swiftyRSA() {
+        guard let publicKey = try? PublicKey(pemEncoded: "publicKey") else {return }
+        guard  let inputPassword = try? ClearMessage(string: "password", using: .utf8) else {return }
+        let encryptedPassword = try? inputPassword.encrypted(with: publicKey, padding: .PKCS1)
+        guard  let password = encryptedPassword?.base64String else {return}
+    }
+}
+
 extension String {
     var htmlToAttributedString: NSAttributedString? {
         guard let data = data(using: .utf8) else { return NSAttributedString() }

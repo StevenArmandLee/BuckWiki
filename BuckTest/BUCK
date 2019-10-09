@@ -15,7 +15,7 @@ apple_resource(
 apple_library(
     name = "AppLibrary",
     configs = library_configs(),
-    swift_version = "5.1",
+    swift_version = "5",
     srcs = glob(["*.swift"]),
     deps = [
        "//Pods:Alamofire",
@@ -37,7 +37,7 @@ apple_library(
          #"//Pods:SkyFloatingLabelTextField",
          #"//Pods:CountryPickerSwift",
          "//Pods:Validator",
-         #"//Pods:SVProgressHUD",
+         "//Pods:SVProgressHUD",
          #"//Pods:Intercom",
          "//Pods:Hero",
          "//Pods:Lottie",
@@ -69,6 +69,9 @@ apple_binary(
         '$SDKROOT/System/Library/Frameworks/CoreTelephony.framework',
     ],
 )
+ui_tests = [
+    ":XCUITests",
+]
 xcode_workspace_config(
     name = "workspace",
     workspace_name = "BuckTest",
@@ -79,6 +82,7 @@ xcode_workspace_config(
             "POST_SCHEME_ACTIONS": ["echo 'Finished'"],
         },
     },
+    extra_tests = ui_tests,
     action_config_names = {"profile": "Profile"},
 )
 apple_bundle(
@@ -100,10 +104,58 @@ apple_test(
     name = "AppTest",
     test_host_app = ":App",
     srcs = glob(["BuckTestTests/*.swift"]),
-    info_plist = "BuckTestTests/Info.plist",
+    info_plist = "Info.plist",
     frameworks = [
         "$SDKROOT/System/Library/Frameworks/Foundation.framework",
         "$PLATFORM_DIR/Developer/Library/Frameworks/XCTest.framework",
         "$SDKROOT/System/Library/Frameworks/UIKit.framework",
     ],
 )
+
+
+
+# This test suite cannot be packaged with other tests due to a dependency on `fbxctest` instead of `xctool`.
+apple_test_lib(
+    name = "XCUITests",
+    destination_specifier = {
+        "name": "iPhone 8",
+    },
+    run_test_separately = True,
+    # The `test_host_app` is launched first in the Simulator and needs to be an `apple_bundle` that is distinct from `ui_test_target_app`.
+    test_host_app = ":XCUITestsHostApp",
+    srcs = glob([
+        "BuckTestUITests/*.swift",
+    ]),
+    is_ui_test = True,
+    # The `ui_test_target_app` field is not mentioned in Buck's official documentation, but it appears in its XCUITest fixtures.
+    # https://github.com/facebook/buck/blob/master/test/com/facebook/buck/apple/testdata/apple_test_xcuitest/BUCK.fixture#L66
+    ui_test_target_app = ":BuckTest",
+    labels = ['ui'],
+    frameworks = [
+        "$PLATFORM_DIR/Developer/Library/Frameworks/XCTest.framework",
+        "$SDKROOT/System/Library/Frameworks/Foundation.framework",
+        "$SDKROOT/System/Library/Frameworks/UIKit.framework",
+    ],
+)
+
+
+# A very thin host app to enable running :XCUITests
+apple_bundle(
+    name = "XCUITestsHostApp",
+    extension = "app",
+    binary = ":XCUITestsHostAppBinary",
+    product_name = "XCUITestsHostApp",
+    info_plist = "Info.plist",
+    info_plist_substitutions = info_plist_substitutions("XCUITestsHostApp"),
+)
+
+apple_binary(
+    name = "XCUITestsHostAppBinary",
+    configs = app_binary_configs("XCUITestsHostAppBinary"),
+    swift_version = "5",
+    srcs = [
+        "BuckSupportFiles/DummyAppDelegate.swift",
+    ],
+)
+
+### Tests End ###

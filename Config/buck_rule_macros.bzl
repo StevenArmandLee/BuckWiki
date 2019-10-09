@@ -1,5 +1,4 @@
 load("//Config:configs.bzl", "test_configs", "library_configs", "pod_library_configs")
-
 # This is just a regular lib that was warnings not set to error
 def apple_third_party_lib(**kwargs):
     apple_lib(
@@ -13,7 +12,7 @@ def test_name(name):
 def ci_test_name(name):
     return name + "-For-CI"
 
-DEFAULT_SWIFT_VERSION = "4.2"
+DEFAULT_SWIFT_VERSION = "5"
 
 # Use this macro to declare test targets. For first-party libraries, use first_party_library to declare a test target instead.
 # This macro defines two targets.
@@ -27,11 +26,12 @@ def apple_test_lib(
         info_plist_substitutions = {},
         test_host_app = None,
         run_test_separately = False,
+        is_ui_test = False,
+        ui_test_target_app = None,
         frameworks = [],
         labels = [],
+        destination_specifier = None,
         **kwargs):
-    test_name = name + ".test"
-
     if bundle_for_ci:
         # Create a library with the test files. We'll use use these for our CI tests.
         # Libraries are much faster to create in CI than unit test bundles.
@@ -47,11 +47,14 @@ def apple_test_lib(
             **kwargs
         )
 
+    if info_plist == None:
+        info_plist = "//Config:test_info_plist"
+
     substitutions = {
         "CURRENT_PROJECT_VERSION": "1",
-        "DEVELOPMENT_LANGUAGE": "en-us",
+        "DEVELOPMENT_LANGUAGE": "en_us",
         "EXECUTABLE_NAME": name,
-        "PRODUCT_BUNDLE_IDENTIFIER": "com.airbnb.%s" % test_name,
+        "PRODUCT_BUNDLE_IDENTIFIER": "com.airbnb.%s" % name,
         "PRODUCT_NAME": name,
     }
     substitutions.update(info_plist_substitutions)
@@ -60,9 +63,12 @@ def apple_test_lib(
         visibility = visibility,
         info_plist = info_plist,
         info_plist_substitutions = substitutions,
+        destination_specifier = destination_specifier,
         test_host_app = test_host_app,
+        is_ui_test = is_ui_test,
+        ui_test_target_app = ui_test_target_app,
         run_test_separately = run_test_separately,
-        configs = test_configs(test_name),
+        configs = test_configs(name),
         frameworks = [
           "$PLATFORM_DIR/Developer/Library/Frameworks/XCTest.framework"
         ] + frameworks,
@@ -74,16 +80,18 @@ def apple_test_lib(
 # Test targets can be slow to create in CI; creating only one can save significant time.
 # - parameter libraries: The libraries whose tests should be put into the single test target.
 # - parameter additional_tests: Additional apple_test targets that should be run as part of the single test target.
+# - parameter prebuilt_frameworks: Any prebuilt frameworks included in module dependencies. This parameter is used to work around a buck bug where transitive prebuilt frameworks are not included in executables.
 def apple_test_all(
         libraries = [],
         additional_tests = [],
+        prebuilt_frameworks = [],
         **kwargs):
     ci_test_libraries = []
     for library in libraries:
         ci_test_libraries.append(ci_test_name(test_name(library)))
 
     apple_test_lib(
-        deps = ci_test_libraries + additional_tests,
+        deps = ci_test_libraries + additional_tests + prebuilt_frameworks,
         bundle_for_ci = False,
         **kwargs
     )
@@ -138,12 +146,13 @@ def apple_lib(
 def first_party_library(
         name,
         has_objective_c = False,
+        has_cpp = False,
         internal_headers = None,
         extra_xcode_files = [],
         mlmodel_generated_source = [],
         deps = [],
         frameworks = [],
-        info_plist = "Tests/Info.plist",
+        info_plist = None,
         info_plist_substitutions = {},
         test_host_app = None,
         run_test_separately = False,
@@ -157,16 +166,22 @@ def first_party_library(
         **kwargs):
     sources = native.glob(["Sources/**/*.swift"])
     exported_headers = None
-    if has_objective_c:
+    if has_objective_c or has_cpp:
         sources.extend(native.glob(["Sources/**/*.m"]))
+        if has_cpp:
+            sources.extend(native.glob(["Sources/**/*.cpp"]))
+            sources.extend(native.glob(["Sources/**/*.mm"]))
         exported_headers = []
         all_headers = native.glob(["Sources/**/*.h"])
+        if has_cpp:
+            all_headers.extend(native.glob(["Sources/**/*.hpp"]))
         for header in all_headers:
             if not header in (internal_headers or []):
                 exported_headers.append(header)
 
     lib_test_name = test_name(name)
-    apple_lib(
+    lib = apple_cxx_lib if has_cpp else apple_lib
+    lib(
         name = name,
         srcs = sources + mlmodel_generated_source,
         exported_headers = exported_headers,
@@ -182,13 +197,13 @@ def first_party_library(
         suppress_warnings = suppress_warnings,
         **kwargs
     )
-    
+
     test_sources = native.glob(["Tests/**/*.swift"])
     test_headers = None
     if has_objective_c:
         test_sources.extend(native.glob(["Tests/**/*.m"]))
         test_headers = native.glob(["Tests/**/*.h"])
-    
+
     apple_test_lib(
         name = lib_test_name,
         srcs = test_sources,

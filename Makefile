@@ -37,7 +37,7 @@ test:
 	$(BUCK) test //App:ExampleAppCITests --test-runner-env FOO=BAR
 
 ui_test:
-	$(BUCK) test //App/UITests:UITests
+	$(BUCK) test //BuckTest:XCUITests --config apple.xctool_path=$(fbxctest)
 
 pods:
 	$(BUCK) build //Pods:PromiseKit
